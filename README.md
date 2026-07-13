@@ -5,7 +5,7 @@
 <h1 align="center">mempalace-remote 🧠📱</h1>
 
 <p align="center">
-  <em>A guarded little door that lets the Claude app on your phone read your second brain —<br>while the brain itself never leaves the desk it lives on.</em>
+  <em>A guarded little door that lets any MCP client — the Claude app on your phone,<br>Codex, Cursor, the lot — read your second brain, while the brain itself<br>never leaves the desk it lives on.</em>
 </p>
 
 <p align="center">
@@ -22,16 +22,25 @@
   <img alt="data leaves home" src="https://img.shields.io/badge/data%20leaves%20home-never-8A2BE2?style=flat-square">
 </p>
 
+<p align="center">
+  <img alt="works with" src="https://img.shields.io/badge/works%20with-Claude%20%C2%B7%20Codex%20%C2%B7%20Cursor%20%C2%B7%20any%20MCP%20client-6f42c1?style=flat-square">
+</p>
+
 ---
 
-Public **remote MCP** front-end for the local MemPalace, so the **Claude app
-(phone)** can reach it as a custom connector. Runs **entirely on the desktop** —
-the palace data never leaves it. Tailscale Funnel publishes it; no router ports,
-no Cloudflare, no Hetzner. Just sunlight. ☀️
+Public **remote MCP** front-end for the local MemPalace, so **any client that
+speaks remote MCP** — the Claude app (phone), Codex, Cursor, and the rest — can
+reach it as a custom connector. It's plain HTTP MCP + OAuth 2.1, so there's
+nothing Claude-specific about it: point any conforming client at the URL. Runs
+**entirely on the desktop** — the palace data never leaves it. Tailscale Funnel
+publishes it; no router ports, no Cloudflare, no Hetzner. Just sunlight. ☀️
 
 ```
-📱 Claude app → ☁️ Anthropic → 🔐 Tailscale Funnel (:8443) → 127.0.0.1:8789 (this) → 🧠 mempalace
+📱 any MCP client → 🔐 Tailscale Funnel (:8443) → 127.0.0.1:8789 (this) → 🧠 mempalace
 ```
+> The **Claude app** reaches you via Anthropic's servers (`client → ☁️ Anthropic → Funnel`),
+> so the endpoint must be public. **Codex, Cursor & co.** dial the Funnel URL directly.
+> Either way the brain stays home.
 
 It wraps `mempalace.mcp_server.handle_request` **without changing a line** and
 puts a minimal OAuth 2.1 authorization server (metadata + dynamic client
@@ -70,18 +79,23 @@ is one passphrase at the login page. 🚪
    If Funnel isn't enabled for the tailnet yet, the command prints an admin URL
    to grant the `funnel` node attribute (run as the tailnet owner).
 
-4. **Add the connector** in the Claude app / claude.ai → Settings → Connectors →
-   Add custom connector → URL:
+4. **Add the connector** in whatever MCP client you use — same URL for all:
    ```
    https://your-machine.your-tailnet.ts.net:8443/mcp
    ```
-   Claude discovers OAuth, opens the login page → enter the passphrase → done.
+   - **Claude app / claude.ai** → Settings → Connectors → Add custom connector
+   - **Codex** → add it as a remote MCP server in your config
+   - **Cursor** → Settings → MCP → add server (URL / streamable-HTTP)
+   - **anything else** that supports remote MCP over HTTP → point it here
+
+   The client discovers OAuth, opens the login page → enter the passphrase → done. ✅
 
 ## Notes 📝
 - Calls to mempalace are serialized (ChromaDB + SQLite KG aren't concurrent-safe).
 - OAuth tokens persist in `~/.mempalace/remote/oauth_state.json` (0600).
 - This is **model A (tunnel)**: works while the desktop is awake. The local
-  Claude Code auto-save hooks are untouched and keep writing the same palace.
+  coding-agent auto-save hooks (Claude Code, Codex, Cursor, …) are untouched and
+  keep writing the same palace — remote clients just read/write the same brain.
 - Backups run hourly (7-day rolling + off-site), and a second always-on box
   watches the public endpoint from the outside — because a machine can't report
   its own death. 🛰️
