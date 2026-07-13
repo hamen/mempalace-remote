@@ -1,0 +1,63 @@
+<svg width="1280" height="360" viewBox="0 0 1280 360" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="MemPalace Remote — your second brain, in your pocket, served from a solar-powered PC at home">
+  <defs>
+    <linearGradient id="bg" x1="0" y1="0" x2="1280" y2="360" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#14092b"/>
+      <stop offset="0.55" stop-color="#2a1550"/>
+      <stop offset="1" stop-color="#3d1b6b"/>
+    </linearGradient>
+    <radialGradient id="sun" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(1120 70) scale(230)">
+      <stop offset="0" stop-color="#ffd15c" stop-opacity="0.95"/>
+      <stop offset="0.35" stop-color="#fdb813" stop-opacity="0.55"/>
+      <stop offset="1" stop-color="#fdb813" stop-opacity="0"/>
+    </radialGradient>
+    <linearGradient id="title" x1="80" y1="120" x2="80" y2="215" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffffff"/>
+      <stop offset="1" stop-color="#d9c9ff"/>
+    </linearGradient>
+    <filter id="soft" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="6"/>
+    </filter>
+  </defs>
+
+  <!-- backdrop -->
+  <rect width="1280" height="360" rx="0" fill="url(#bg)"/>
+  <rect width="1280" height="360" fill="url(#sun)"/>
+
+  <!-- faint starfield / drawer dots -->
+  <g fill="#ffffff" opacity="0.10">
+    <circle cx="180" cy="60" r="2"/><circle cx="320" cy="40" r="1.5"/><circle cx="470" cy="70" r="2"/>
+    <circle cx="90" cy="300" r="1.5"/><circle cx="600" cy="310" r="2"/><circle cx="250" cy="330" r="1.5"/>
+    <circle cx="760" cy="50" r="1.5"/><circle cx="880" cy="300" r="2"/><circle cx="1000" cy="330" r="1.5"/>
+  </g>
+
+  <!-- title block -->
+  <text x="80" y="150" font-family="'Segoe UI', Ubuntu, Helvetica, Arial, sans-serif" font-size="34">🧠</text>
+  <text x="128" y="160" font-family="'Segoe UI', Ubuntu, Helvetica, Arial, sans-serif" font-weight="800" font-size="62" fill="url(#title)" letter-spacing="-1">mempalace-remote</text>
+  <text x="82" y="210" font-family="'Segoe UI', Ubuntu, Helvetica, Arial, sans-serif" font-size="24" fill="#c9b8ff" opacity="0.95">Your second brain — in your pocket.</text>
+  <text x="82" y="244" font-family="'Segoe UI', Ubuntu, Helvetica, Arial, sans-serif" font-size="20" fill="#9d86d6">Self-hosted MCP, served from a solar-powered PC at home. ☀️</text>
+
+  <!-- flow chips: phone → door → brain -->
+  <g font-family="'Segoe UI', Ubuntu, Helvetica, Arial, sans-serif" font-size="18" fill="#efe7ff">
+    <g transform="translate(82 285)">
+      <rect x="0" y="0" width="128" height="44" rx="12" fill="#ffffff" opacity="0.08"/>
+      <rect x="0" y="0" width="128" height="44" rx="12" fill="none" stroke="#ffffff" stroke-opacity="0.18"/>
+      <text x="18" y="28">📱 Phone</text>
+    </g>
+    <text x="222" y="313" fill="#8f79c9" font-size="20">→</text>
+    <g transform="translate(250 285)">
+      <rect x="0" y="0" width="182" height="44" rx="12" fill="#ffffff" opacity="0.08"/>
+      <rect x="0" y="0" width="182" height="44" rx="12" fill="none" stroke="#ffffff" stroke-opacity="0.18"/>
+      <text x="18" y="28">🔐 OAuth door</text>
+    </g>
+    <text x="444" y="313" fill="#8f79c9" font-size="20">→</text>
+    <g transform="translate(472 285)">
+      <rect x="0" y="0" width="196" height="44" rx="12" fill="#fdb813" opacity="0.16"/>
+      <rect x="0" y="0" width="196" height="44" rx="12" fill="none" stroke="#fdb813" stroke-opacity="0.35"/>
+      <text x="18" y="28">🏠 Brain stays home</text>
+    </g>
+  </g>
+
+  <!-- glowing sun disc -->
+  <circle cx="1120" cy="70" r="34" fill="#ffd15c" filter="url(#soft)" opacity="0.9"/>
+  <circle cx="1120" cy="70" r="26" fill="#ffe08a"/>
+</svg>
