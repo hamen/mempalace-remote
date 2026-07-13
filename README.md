@@ -24,13 +24,15 @@
 
 <p align="center">
   <img alt="works with" src="https://img.shields.io/badge/works%20with-Claude%20%C2%B7%20Codex%20%C2%B7%20Cursor%20%C2%B7%20any%20MCP%20client-6f42c1?style=flat-square">
+  <a href="https://github.com/MemPalace/mempalace"><img alt="MemPalace" src="https://img.shields.io/badge/front--end%20for-MemPalace-8A2BE2?style=flat-square"></a>
 </p>
 
 ---
 
-Public **remote MCP** front-end for the local MemPalace, so **any client that
-speaks remote MCP** — the Claude app (phone), Codex, Cursor, and the rest — can
-reach it as a custom connector. It's plain HTTP MCP + OAuth 2.1, so there's
+Public **remote MCP** front-end for [**MemPalace**](https://github.com/MemPalace/mempalace)
+(the open-source AI memory system), so **any client that speaks remote MCP** —
+the Claude app (phone), Codex, Cursor, and the rest — can reach your local palace
+as a custom connector. It's plain HTTP MCP + OAuth 2.1, so there's
 nothing Claude-specific about it: point any conforming client at the URL. Runs
 **entirely on the desktop** — the palace data never leaves it. Tailscale Funnel
 publishes it; no router ports, no Cloudflare, no Hetzner. Just a little server in
@@ -43,13 +45,18 @@ your house. 🏠
 > so the endpoint must be public. **Codex, Cursor & co.** dial the Funnel URL directly.
 > Either way the brain stays home.
 
-It wraps `mempalace.mcp_server.handle_request` **without changing a line** and
+It wraps [MemPalace](https://github.com/MemPalace/mempalace)'s
+`mempalace.mcp_server.handle_request` **without changing a line** and
 puts a minimal OAuth 2.1 authorization server (metadata + dynamic client
 registration + authorization-code + PKCE/S256 + refresh) in front. No third
 party — the server is *both* the resource and its own authorizer. The human gate
 is one passphrase at the login page. 🚪
 
 ## Setup 🚀
+
+> **Requires** a working [MemPalace](https://github.com/MemPalace/mempalace)
+> install (the `mempalace` package importable by the interpreter `run.sh` uses).
+> This repo is only the public door — the palace itself lives there.
 
 1. **Secrets** 🔑
    ```bash
