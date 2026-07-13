@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/banner.svg" alt="mempalace-remote — your second brain, in your pocket, served from a solar-powered PC at home" width="100%">
+  <img src="assets/banner.svg" alt="mempalace-remote — your second brain, in your pocket, served from a little server in your house" width="100%">
 </p>
 
 <h1 align="center">mempalace-remote 🧠📱</h1>
@@ -18,7 +18,7 @@
 
 <p align="center">
   <img alt="self-hosted" src="https://img.shields.io/badge/self--hosted-at%20home-2ea44f?style=flat-square">
-  <img alt="powered by sunlight" src="https://img.shields.io/badge/powered%20by-%E2%98%80%EF%B8%8F%20sunlight-FDB813?style=flat-square">
+  <img alt="no cloud" src="https://img.shields.io/badge/no%20cloud-no%20CDN-2ea44f?style=flat-square">
   <img alt="data leaves home" src="https://img.shields.io/badge/data%20leaves%20home-never-8A2BE2?style=flat-square">
 </p>
 
@@ -33,7 +33,8 @@ speaks remote MCP** — the Claude app (phone), Codex, Cursor, and the rest — 
 reach it as a custom connector. It's plain HTTP MCP + OAuth 2.1, so there's
 nothing Claude-specific about it: point any conforming client at the URL. Runs
 **entirely on the desktop** — the palace data never leaves it. Tailscale Funnel
-publishes it; no router ports, no Cloudflare, no Hetzner. Just sunlight. ☀️
+publishes it; no router ports, no Cloudflare, no Hetzner. Just a little server in
+your house. 🏠
 
 ```
 📱 any MCP client → 🔐 Tailscale Funnel (:8443) → 127.0.0.1:8789 (this) → 🧠 mempalace
@@ -102,4 +103,4 @@ is one passphrase at the login page. 🚪
 
 ---
 
-<p align="center"><sub>The datacenter is a house. The house runs on sunlight. Kardashev Type 1, one drawer at a time. ☀️🧠</sub></p>
+<p align="center"><sub>The datacenter is a house. One brain, one door, one drawer at a time. 🧠</sub></p>
