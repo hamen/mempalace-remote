@@ -1,0 +1,20 @@
+# Secrets & runtime state (never commit — live outside the repo anyway)
+env
+*.env
+oauth_state.json
+*_state.json
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Backups / snapshots
+*.tar.gz
+*.sqlite3
+.backup.lock
+
+# Editor / OS
+.DS_Store
+*.swp

@@ -1,0 +1,9 @@
+# Internal watchdog one-shot (triggered by the .timer every minute).
+# Install: cp to ~/.config/systemd/user/ ; systemctl --user daemon-reload
+[Unit]
+Description=MemPalace internal watchdog (health-check + self-heal)
+After=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/home/ivan/code/mempalace-remote/monitor/healthcheck-local.sh

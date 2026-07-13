@@ -1,0 +1,13 @@
+# Run the MemPalace backup every hour. Persistent=true catches runs missed
+# while the machine was off (it never is, but belt-and-suspenders).
+[Unit]
+Description=Run MemPalace backup hourly
+
+[Timer]
+OnCalendar=hourly
+OnBootSec=2min
+Persistent=true
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target

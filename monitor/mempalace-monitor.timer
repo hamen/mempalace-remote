@@ -1,0 +1,13 @@
+# Runs the internal watchdog every minute.
+# Install: cp to ~/.config/systemd/user/ ; systemctl --user daemon-reload
+#          systemctl --user enable --now mempalace-monitor.timer
+[Unit]
+Description=Run MemPalace internal watchdog every minute
+
+[Timer]
+OnBootSec=60
+OnUnitActiveSec=60
+AccuracySec=10s
+
+[Install]
+WantedBy=timers.target

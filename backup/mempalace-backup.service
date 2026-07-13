@@ -1,0 +1,9 @@
+# Hourly MemPalace backup (one-shot, triggered by the .timer).
+[Unit]
+Description=MemPalace backup (hourly, 7-day rolling, offsite to Google Drive)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/home/ivan/code/mempalace-remote/backup/mempalace-backup.sh

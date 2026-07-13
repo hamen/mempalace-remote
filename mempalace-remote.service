@@ -1,0 +1,22 @@
+# User service. Install:
+#   mkdir -p ~/.config/systemd/user
+#   cp mempalace-remote.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now mempalace-remote
+# Requires lingering so it runs without an active login session:
+#   sudo loginctl enable-linger ivan
+[Unit]
+Description=mempalace-remote (public OAuth/HTTP MCP front-end for MemPalace)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/home/ivan/code/mempalace-remote/run.sh
+Restart=always
+RestartSec=3
+# Tame chromadb/onnx CPU use on the 2-core box.
+Environment=OMP_NUM_THREADS=2
+
+[Install]
+WantedBy=default.target
