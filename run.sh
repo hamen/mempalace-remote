@@ -14,7 +14,7 @@ if [[ -f "$ENV_FILE" ]]; then
 fi
 
 # Interpreter from the uv tool venv that ships mempalace.
-PY="${MEMPALACE_PYTHON:-/home/ivan/.local/share/uv/tools/mempalace/bin/python}"
+PY="${MEMPALACE_PYTHON:-$HOME/.local/share/uv/tools/mempalace/bin/python}"
 
 : "${MEMPALACE_REMOTE_PASSPHRASE:?set MEMPALACE_REMOTE_PASSPHRASE in $ENV_FILE}"
 

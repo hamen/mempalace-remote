@@ -4,7 +4,13 @@
 # data doesn't match. The original Chroma store is moved aside (never deleted).
 set -uo pipefail
 
-PY=/home/ivan/.local/share/uv/tools/claude-code-telegram/bin/python
+# Interpreter that has mempalace installed. Override from the shell when it
+# lives elsewhere:  MEMPALACE_PYTHON=/path/to/python ./cutover-to-qdrant.sh
+# Deliberately NOT sourced from the remote service's env file the way run.sh
+# does it: that file carries MEMPALACE_BACKEND / MEMPALACE_QDRANT_URL (step 8
+# appends them), and the parity gate in step 7 must compare a real Chroma read
+# against a real Qdrant read without inheriting a backend selector.
+PY="${MEMPALACE_PYTHON:-$HOME/.local/share/uv/tools/mempalace/bin/python}"
 QURL=http://127.0.0.1:6333
 MP="$HOME/.mempalace"
 PALACE="$MP/palace"
@@ -17,6 +23,11 @@ BOTS="claude-telegram-bot.service claude-telegram-bot-main.service claude-telegr
 say() { echo -e "\n=== $* ==="; }
 
 say "0. preflight"
+# Check the interpreter BEFORE anything destructive: steps 3-6 rewrite config.json,
+# drop the Qdrant collections and move the Chroma store aside. Discovering a bad $PY
+# at step 3 would leave that mess behind for the rollback path to undo.
+[[ -x "$PY" ]] || { echo "interprete non eseguibile: $PY → ABORT (set MEMPALACE_PYTHON)"; exit 1; }
+"$PY" -c 'import mempalace' 2>/dev/null || { echo "$PY non ha mempalace → ABORT (set MEMPALACE_PYTHON)"; exit 1; }
 curl -fs --max-time 5 "$QURL/healthz" >/dev/null || { echo "Qdrant giù → ABORT"; exit 1; }
 if [[ ! -f "$PALACE/chroma.sqlite3" ]]; then echo "chroma.sqlite3 assente (già migrato?) → ABORT"; exit 1; fi
 cp "$CFG" "$CFG.pre-qdrant.$TS"   # config backup for rollback
