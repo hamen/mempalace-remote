@@ -4,7 +4,13 @@
 # data doesn't match. The original Chroma store is moved aside (never deleted).
 set -uo pipefail
 
-PY="${MEMPALACE_PYTHON:-/home/ivan/.local/share/uv/tools/mempalace/bin/python}"
+# Interpreter that has mempalace installed. Override from the shell when it
+# lives elsewhere:  MEMPALACE_PYTHON=/path/to/python ./cutover-to-qdrant.sh
+# Deliberately NOT sourced from the remote service's env file the way run.sh
+# does it: that file carries MEMPALACE_BACKEND / MEMPALACE_QDRANT_URL (step 8
+# appends them), and the parity gate in step 7 must compare a real Chroma read
+# against a real Qdrant read without inheriting a backend selector.
+PY="${MEMPALACE_PYTHON:-$HOME/.local/share/uv/tools/mempalace/bin/python}"
 QURL=http://127.0.0.1:6333
 MP="$HOME/.mempalace"
 PALACE="$MP/palace"
