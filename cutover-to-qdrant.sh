@@ -4,7 +4,7 @@
 # data doesn't match. The original Chroma store is moved aside (never deleted).
 set -uo pipefail
 
-PY=/home/ivan/.local/share/uv/tools/claude-code-telegram/bin/python
+PY="${MEMPALACE_PYTHON:-/home/ivan/.local/share/uv/tools/mempalace/bin/python}"
 QURL=http://127.0.0.1:6333
 MP="$HOME/.mempalace"
 PALACE="$MP/palace"
