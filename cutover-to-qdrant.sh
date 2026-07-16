@@ -23,6 +23,11 @@ BOTS="claude-telegram-bot.service claude-telegram-bot-main.service claude-telegr
 say() { echo -e "\n=== $* ==="; }
 
 say "0. preflight"
+# Check the interpreter BEFORE anything destructive: steps 3-6 rewrite config.json,
+# drop the Qdrant collections and move the Chroma store aside. Discovering a bad $PY
+# at step 3 would leave that mess behind for the rollback path to undo.
+[[ -x "$PY" ]] || { echo "interprete non eseguibile: $PY → ABORT (set MEMPALACE_PYTHON)"; exit 1; }
+"$PY" -c 'import mempalace' 2>/dev/null || { echo "$PY non ha mempalace → ABORT (set MEMPALACE_PYTHON)"; exit 1; }
 curl -fs --max-time 5 "$QURL/healthz" >/dev/null || { echo "Qdrant giù → ABORT"; exit 1; }
 if [[ ! -f "$PALACE/chroma.sqlite3" ]]; then echo "chroma.sqlite3 assente (già migrato?) → ABORT"; exit 1; fi
 cp "$CFG" "$CFG.pre-qdrant.$TS"   # config backup for rollback
