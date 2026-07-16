@@ -2,10 +2,9 @@
 # Launch mempalace-remote with the SAME interpreter that has mempalace installed.
 set -euo pipefail
 
-# Interpreter from the uv tool venv that ships mempalace.
-PY="${MEMPALACE_PYTHON:-/home/ivan/.local/share/uv/tools/claude-code-telegram/bin/python}"
-
-# Secrets / overrides (passphrase, port, public URL). Not committed.
+# Secrets / overrides (passphrase, port, public URL, MEMPALACE_PYTHON). Not committed.
+# Sourced BEFORE resolving PY: setting MEMPALACE_PYTHON here is documented as an
+# override, so it has to land in the environment before the default below is taken.
 ENV_FILE="${MEMPALACE_REMOTE_ENV:-$HOME/.mempalace/remote/env}"
 if [[ -f "$ENV_FILE" ]]; then
   set -a
@@ -13,6 +12,9 @@ if [[ -f "$ENV_FILE" ]]; then
   source "$ENV_FILE"
   set +a
 fi
+
+# Interpreter from the uv tool venv that ships mempalace.
+PY="${MEMPALACE_PYTHON:-/home/ivan/.local/share/uv/tools/mempalace/bin/python}"
 
 : "${MEMPALACE_REMOTE_PASSPHRASE:?set MEMPALACE_REMOTE_PASSPHRASE in $ENV_FILE}"
 
