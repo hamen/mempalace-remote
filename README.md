@@ -85,9 +85,14 @@ sees the traffic; the palace itself still lives only on your desk.
    ```bash
    uv tool install mempalace==<version> --with fastapi --with python-multipart --with 'pyjwt[crypto]'
    ```
-   `pyjwt[crypto]` is needed only in `cloudflare-access` mode. Pin the mempalace
-   version you already run, so the reinstall changes nothing else (`uv tool install`
-   replaces the whole tool environment).
+   `pyjwt[crypto]` is needed only in `cloudflare-access` mode. `uv tool install`
+   rebuilds the whole tool environment, so on an existing install pin the mempalace
+   version you run and hold every other package where it is:
+   ```bash
+   uv pip freeze --python ~/.local/share/uv/tools/mempalace/bin/python > before.txt
+   uv tool install mempalace==<version> --with fastapi --with python-multipart \
+     --with 'pyjwt[crypto]' -c before.txt
+   ```
 
 1. **Secrets** 🔑
    ```bash

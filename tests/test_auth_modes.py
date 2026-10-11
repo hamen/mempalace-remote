@@ -20,6 +20,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 import types
 import unittest
@@ -77,6 +78,7 @@ class FakeNet:
 
     def __init__(self):
         self.jwks_error: Exception | None = None
+        self.jwks_block: threading.Event | None = None
         self.qdrant_delay = 0.0
         self.qdrant_error: Exception | None = None
         self.calls: list[tuple[str, object]] = []
@@ -85,6 +87,8 @@ class FakeNet:
         url = fullurl.full_url if isinstance(fullurl, urllib.request.Request) else fullurl
         self.calls.append((url, timeout))
         if url.endswith("/cdn-cgi/access/certs"):
+            if self.jwks_block is not None:
+                self.jwks_block.wait(5)
             if self.jwks_error is not None:
                 raise self.jwks_error
             return FakeResponse(json.dumps(_jwks()).encode())
@@ -409,6 +413,27 @@ class ImportRefusalTest(ServerTestCase):
         self.assertIn("signing keys", self.assertRefuses(**ACCESS_ENV))
         self.assertEqual(self.net.jwks_fetches(), [(CERTS_URL, 10)])
 
+    def test_jwks_fetch_slower_than_the_deadline(self):
+        # No socket timeout fires (the fetch just never answers): the 10 s
+        # deadline on the whole fetch must. The join is shortened so the test
+        # does not wait 10 s, and the deadline it was given is recorded.
+        release = threading.Event()
+        self.addCleanup(release.set)
+        self.net.jwks_block = release
+        deadlines = []
+        real_join = threading.Thread.join
+
+        def short_join(thread, timeout=None):
+            if thread.name == "jwks-startup":
+                deadlines.append(timeout)
+                timeout = 0.2
+            return real_join(thread, timeout)
+
+        with mock.patch.object(threading.Thread, "join", short_join):
+            msg = self.assertRefuses(**ACCESS_ENV)
+        self.assertIn("no answer within 10 s", msg)
+        self.assertEqual(deadlines, [10])
+
 
 class PassphraseModeTest(ServerTestCase):
     def setUp(self):
@@ -428,6 +453,17 @@ class PassphraseModeTest(ServerTestCase):
     def test_register(self):
         r = self.c.post("/register", json={"redirect_uris": ["https://claude.ai/api/mcp/auth_callback"]})
         self.assertEqual(r.status_code, 201)
+
+    def test_valid_bearer_reaches_the_palace(self):
+        self.mod._store["tokens"]["tok"] = {"client_id": "c", "expires": time.time() + 999}
+        h = {"Authorization": "Bearer tok"}
+        r = self.c.post("/mcp", json=RPC, headers=h)
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(r.json()["result"], {"stub": True})
+        self.assertEqual(self.palace.requests, [RPC])
+        r = self.c.get("/mcp", headers=h)
+        self.assertEqual(r.status_code, 405)
+        self.assertEqual(r.headers["allow"], "POST")
 
     def test_mcp_without_bearer_is_challenged(self):
         r = self.c.post("/mcp", json=RPC)
@@ -489,6 +525,15 @@ class LauncherTest(unittest.TestCase):
 
     def test_no_mode_line_without_passphrase_refuses(self):
         self.assertRefused(self.run_sh(""))
+
+    def test_padded_passphrase_modes_without_passphrase_refuse(self):
+        # server.py strips AUTH_MODE, so these run passphrase mode: guard them too.
+        for mode in ("  ", " passphrase "):
+            with self.subTest(mode=mode):
+                self.assertRefused(self.run_sh(f'AUTH_MODE="{mode}"\n'))
+
+    def test_padded_access_mode_without_passphrase_starts(self):
+        self.assertExecs(self.run_sh('AUTH_MODE=" cloudflare-access "\n'))
 
     def test_todays_env_file_starts(self):
         # No AUTH_MODE line at all, as in every install before this change (set -u).

@@ -28,6 +28,7 @@ import json
 import logging
 import os
 import secrets
+import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
@@ -72,6 +73,28 @@ def _allowed_emails(raw: Optional[str]) -> Optional[frozenset[str]]:
     return emails
 
 
+def _within(seconds: float, fn: Any) -> Any:
+    """Run fn(), but give up after `seconds` in total. A socket timeout bounds
+    each read, not DNS or a slow trickle. The worker is a daemon thread, so a
+    fetch that never ends cannot hold the exit either."""
+    box: dict[str, Any] = {}
+
+    def run() -> None:
+        try:
+            box["value"] = fn()
+        except BaseException as exc:  # noqa: BLE001 — re-raised below
+            box["error"] = exc
+
+    worker = threading.Thread(target=run, name="jwks-startup", daemon=True)
+    worker.start()
+    worker.join(seconds)
+    if worker.is_alive():
+        raise TimeoutError(f"no answer within {seconds} s")
+    if "error" in box:
+        raise box["error"]
+    return box.get("value")
+
+
 CF_ACCESS_TEAM = ""
 CF_ACCESS_AUD = ""
 CF_ACCESS_ALLOWED_EMAILS: Optional[frozenset[str]] = None
@@ -98,7 +121,7 @@ if ACCESS_MODE:
     # Fetch once now: a wrong team domain or a hung fetch fails the start
     # loudly instead of turning every request into a quiet 403.
     try:
-        _jwks.get_signing_keys()
+        _within(JWKS_TIMEOUT, _jwks.get_signing_keys)
     except Exception as exc:  # noqa: BLE001
         raise SystemExit(f"cannot load the Access signing keys from {_jwks.uri}: {exc}") from None
 

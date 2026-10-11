@@ -18,7 +18,9 @@ PY="${MEMPALACE_PYTHON:-$HOME/.local/share/uv/tools/mempalace/bin/python}"
 
 # The passphrase is the login only in passphrase mode (the default). In
 # cloudflare-access mode, server.py validates its own settings at start.
-case "${AUTH_MODE:-}" in
+# Spaces are dropped first, so every value server.py reads as passphrase mode
+# (blank, " passphrase ") gets the guard.
+case "$(printf '%s' "${AUTH_MODE:-}" | tr -d '[:space:]')" in
   ""|passphrase)
     : "${MEMPALACE_REMOTE_PASSPHRASE:?set MEMPALACE_REMOTE_PASSPHRASE in $ENV_FILE}"
     ;;
