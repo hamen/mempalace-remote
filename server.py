@@ -4,13 +4,19 @@ Model A ("tunnel"): the canonical palace and the MemPalace package stay on this
 desktop. This process wraps ``mempalace.mcp_server.handle_request`` (the existing
 hand-rolled JSON-RPC dispatcher) in a Streamable-HTTP MCP endpoint guarded by a
 minimal OAuth 2.1 authorization server, so the Claude app can add it as a remote
-custom connector. Tailscale Funnel publishes ``127.0.0.1:$BIND_PORT`` at
-``$PUBLIC_BASE_URL`` — nothing is exposed on the home router.
+custom connector. Tailscale Funnel or a Cloudflare Tunnel publishes
+``127.0.0.1:$BIND_PORT`` — nothing is exposed on the home router.
 
-Single user (Ivan). The OAuth dance claude.ai expects is implemented end to end:
-protected-resource metadata, authorization-server metadata, dynamic client
-registration, authorization-code + PKCE(S256), and refresh tokens. The human gate
-at ``/authorize`` is a single passphrase ($MEMPALACE_REMOTE_PASSPHRASE).
+Single user (Ivan). Two auth modes, picked by $AUTH_MODE:
+
+- ``passphrase`` (default): the OAuth dance claude.ai expects is implemented end
+  to end: protected-resource metadata, authorization-server metadata, dynamic
+  client registration, authorization-code + PKCE(S256), and refresh tokens. The
+  human gate at ``/authorize`` is a single passphrase ($MEMPALACE_REMOTE_PASSPHRASE).
+- ``cloudflare-access``: Cloudflare Access (Managed OAuth) is the authorization
+  server, at the edge, and a Cloudflare Tunnel publishes this port. Every /mcp
+  request must carry the ``Cf-Access-Jwt-Assertion`` Access adds; the built-in
+  OAuth endpoints are not served at all.
 """
 
 from __future__ import annotations
@@ -22,9 +28,102 @@ import json
 import logging
 import os
 import secrets
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any, Optional
+from urllib.parse import urlsplit
+
+# --- auth mode --------------------------------------------------------------
+# Validated before the palace package is imported: a bad config exits with one
+# clear line and never imports (let alone serves) the palace. run.sh execs this
+# file, so the exit reaches systemd as a failed start.
+AUTH_MODE = os.environ.get("AUTH_MODE", "").strip() or "passphrase"
+if AUTH_MODE not in ("passphrase", "cloudflare-access"):
+    raise SystemExit(f"AUTH_MODE={AUTH_MODE!r}: expected 'passphrase' or 'cloudflare-access'")
+ACCESS_MODE = AUTH_MODE == "cloudflare-access"
+
+JWKS_TIMEOUT = 10  # seconds, for the startup fetch and every later refetch
+
+
+def _team_domain(raw: str) -> str:
+    """https://<team>.cloudflareaccess.com — the `iss` of every assertion."""
+    team = raw.strip().rstrip("/")
+    if not team:
+        raise SystemExit("CF_ACCESS_TEAM_DOMAIN is required when AUTH_MODE=cloudflare-access")
+    if "://" not in team:
+        team = "https://" + team
+    parts = urlsplit(team)
+    if parts.scheme != "https" or not parts.netloc or parts.path or parts.query or parts.fragment:
+        raise SystemExit(
+            f"CF_ACCESS_TEAM_DOMAIN={raw!r}: expected https://<team>.cloudflareaccess.com"
+        )
+    return team
+
+
+def _allowed_emails(raw: Optional[str]) -> Optional[frozenset[str]]:
+    """Unset or empty = no origin email check. Set but listing nobody = refuse,
+    so a typo can never switch the check off."""
+    if not raw:
+        return None
+    emails = frozenset(e.strip().lower() for e in raw.split(",") if e.strip())
+    if not emails:
+        raise SystemExit(f"CF_ACCESS_ALLOWED_EMAILS={raw!r} lists no email; unset it or name one")
+    return emails
+
+
+def _within(seconds: float, fn: Any) -> Any:
+    """Run fn(), but give up after `seconds` in total. A socket timeout bounds
+    each read, not DNS or a slow trickle. The worker is a daemon thread, so a
+    fetch that never ends cannot hold the exit either."""
+    box: dict[str, Any] = {}
+
+    def run() -> None:
+        try:
+            box["value"] = fn()
+        except BaseException as exc:  # noqa: BLE001 — re-raised below
+            box["error"] = exc
+
+    worker = threading.Thread(target=run, name="jwks-startup", daemon=True)
+    worker.start()
+    worker.join(seconds)
+    if worker.is_alive():
+        raise TimeoutError(f"no answer within {seconds} s")
+    if "error" in box:
+        raise box["error"]
+    return box.get("value")
+
+
+CF_ACCESS_TEAM = ""
+CF_ACCESS_AUD = ""
+CF_ACCESS_ALLOWED_EMAILS: Optional[frozenset[str]] = None
+_jwks: Any = None
+
+if ACCESS_MODE:
+    CF_ACCESS_TEAM = _team_domain(os.environ.get("CF_ACCESS_TEAM_DOMAIN", ""))
+    CF_ACCESS_AUD = os.environ.get("CF_ACCESS_AUD", "").strip()
+    if not CF_ACCESS_AUD:
+        raise SystemExit("CF_ACCESS_AUD is required when AUTH_MODE=cloudflare-access")
+    CF_ACCESS_ALLOWED_EMAILS = _allowed_emails(os.environ.get("CF_ACCESS_ALLOWED_EMAILS"))
+    # Imported only in this mode: passphrase installs need nothing new.
+    try:
+        import jwt
+        from jwt.algorithms import has_crypto
+    except ImportError:
+        raise SystemExit(
+            "AUTH_MODE=cloudflare-access needs PyJWT: add --with 'pyjwt[crypto]' to the "
+            "uv tool install of mempalace"
+        ) from None
+    if not has_crypto:
+        raise SystemExit("AUTH_MODE=cloudflare-access needs pyjwt[crypto] (RS256)")
+    _jwks = jwt.PyJWKClient(f"{CF_ACCESS_TEAM}/cdn-cgi/access/certs", timeout=JWKS_TIMEOUT)
+    # Fetch once now: a wrong team domain or a hung fetch fails the start
+    # loudly instead of turning every request into a quiet 403.
+    try:
+        _within(JWKS_TIMEOUT, _jwks.get_signing_keys)
+    except Exception as exc:  # noqa: BLE001
+        raise SystemExit(f"cannot load the Access signing keys from {_jwks.uri}: {exc}") from None
 
 # Importing mempalace.mcp_server runs its module-level "stdio protection" which
 # dup2(2,1)'s real stdout onto stderr (meant for the stdio transport). Undo it
@@ -134,10 +233,18 @@ app = FastAPI(title="mempalace-remote", docs_url=None, redoc_url=None)
 
 @app.on_event("startup")
 async def _startup() -> None:
+    if ACCESS_MODE:
+        # No OAuth state in this mode: oauth_state.json is neither read nor written.
+        log.info(
+            "mempalace-remote up; auth=cloudflare-access team=%s aud=%s emails=%s",
+            CF_ACCESS_TEAM, CF_ACCESS_AUD,
+            ",".join(sorted(CF_ACCESS_ALLOWED_EMAILS)) if CF_ACCESS_ALLOWED_EMAILS else "any",
+        )
+        return
     if not PASSPHRASE:
         log.error("MEMPALACE_REMOTE_PASSPHRASE is empty — /authorize will reject all logins")
     _load_store()
-    log.info("mempalace-remote up; issuer=%s resource=%s", ISSUER, MCP_RESOURCE)
+    log.info("mempalace-remote up; auth=passphrase issuer=%s resource=%s", ISSUER, MCP_RESOURCE)
 
 
 @app.get("/")
@@ -145,22 +252,41 @@ async def root() -> PlainTextResponse:
     return PlainTextResponse("mempalace-remote: alive. MCP endpoint at /mcp\n")
 
 
+# The backend probe blocks for up to 4 s, so it runs off the event loop, in its
+# own thread: /healthz is public (an Access bypass), and a flood of it must
+# stall neither /mcp nor the palace calls in the default executor. Concurrent
+# requests share the probe in flight, so a flood while Qdrant is slow queues
+# no work: every waiter gets that one probe's answer when it ends.
+_health_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="healthz")
+_probe_in_flight: Optional[asyncio.Future] = None
+
+
+def _probe_backend(qurl: str) -> tuple[int, str]:
+    import urllib.request
+    try:
+        with urllib.request.urlopen(qurl.rstrip("/") + "/healthz", timeout=4) as r:
+            if 200 <= r.status < 300:
+                return 200, "ok\n"
+    except Exception:  # noqa: BLE001
+        return 503, "backend unavailable\n"
+    return 503, "backend unhealthy\n"
+
+
 @app.get("/healthz")
 async def healthz() -> Response:
+    global _probe_in_flight
     # Deep check: when a remote vector backend is configured, the wrapper is
     # only healthy if that backend answers. Otherwise /healthz would lie
     # (process up, brain unreachable) and the watchdog/sentinel would miss a
     # dead backend.
     qurl = os.environ.get("MEMPALACE_QDRANT_URL")
     if qurl:
-        import urllib.request
-        try:
-            with urllib.request.urlopen(qurl.rstrip("/") + "/healthz", timeout=4) as r:
-                if 200 <= r.status < 300:
-                    return PlainTextResponse("ok\n")
-        except Exception:  # noqa: BLE001
-            return PlainTextResponse("backend unavailable\n", status_code=503)
-        return PlainTextResponse("backend unhealthy\n", status_code=503)
+        if _probe_in_flight is None or _probe_in_flight.done():
+            loop = asyncio.get_running_loop()
+            _probe_in_flight = loop.run_in_executor(_health_pool, _probe_backend, qurl)
+        # shield: a client that hangs up must not cancel the probe others wait on.
+        status, text = await asyncio.shield(_probe_in_flight)
+        return PlainTextResponse(text, status_code=status)
     return PlainTextResponse("ok\n")
 
 
@@ -385,6 +511,25 @@ async def token(request: Request) -> JSONResponse:
     return JSONResponse({"error": "unsupported_grant_type"}, status_code=400)
 
 
+# In cloudflare-access mode, Access is the authorization server (at the edge).
+# Drop every built-in OAuth route, so the passphrase login page cannot be
+# reached from any path, the tailnet included: these paths answer 404.
+_OAUTH_PATHS = frozenset({
+    "/.well-known/oauth-protected-resource",
+    "/.well-known/oauth-protected-resource/mcp",
+    "/.well-known/oauth-authorization-server",
+    "/.well-known/oauth-authorization-server/mcp",
+    "/.well-known/openid-configuration",
+    "/register",
+    "/authorize",
+    "/token",
+})
+if ACCESS_MODE:
+    app.router.routes[:] = [
+        r for r in app.router.routes if getattr(r, "path", None) not in _OAUTH_PATHS
+    ]
+
+
 # --- the MCP endpoint -----------------------------------------------------
 def _valid_bearer(request: Request) -> bool:
     auth = request.headers.get("authorization", "")
@@ -407,6 +552,65 @@ def _unauthorized() -> Response:
     )
 
 
+def _check_assertion(token: str) -> tuple[bool, str]:
+    """Verify a Cf-Access-Jwt-Assertion. Blocking (a new `kid` refetches the
+    JWKS), so it runs in a worker thread. Never raises: returns (True, email)
+    or (False, reason). The reason never contains the token."""
+    try:
+        key = _jwks.get_signing_key_from_jwt(token)
+        claims = jwt.decode(
+            token,
+            key.key,
+            algorithms=["RS256"],
+            audience=CF_ACCESS_AUD,
+            issuer=CF_ACCESS_TEAM,
+            leeway=30,
+            options={"require": ["exp", "iss", "aud"]},
+        )
+    except jwt.ExpiredSignatureError:
+        return False, "expired"
+    except jwt.InvalidAudienceError:
+        return False, "aud"
+    except jwt.InvalidIssuerError:
+        return False, "iss"
+    except jwt.InvalidSignatureError:
+        return False, "signature"
+    except jwt.PyJWKClientError as exc:  # unknown kid, JWKS refetch failed
+        return False, f"signing key ({type(exc).__name__})"
+    except Exception as exc:  # noqa: BLE001 — malformed, wrong alg, anything else
+        return False, f"invalid ({type(exc).__name__})"
+    email = claims.get("email")
+    email = email.strip().lower() if isinstance(email, str) else ""
+    if CF_ACCESS_ALLOWED_EMAILS is not None and email not in CF_ACCESS_ALLOWED_EMAILS:
+        return False, f"email {email or '(missing)'} not allowed"
+    return True, email or "(no email)"
+
+
+async def _authorized(request: Request) -> bool:
+    if not ACCESS_MODE:
+        return _valid_bearer(request)
+    # The Authorization header is ignored here: what proves the caller is the
+    # assertion Access adds after it has checked the client's own bearer.
+    token = request.headers.get("cf-access-jwt-assertion", "")
+    if token:
+        loop = asyncio.get_running_loop()
+        ok, detail = await loop.run_in_executor(None, _check_assertion, token)
+    else:
+        ok, detail = False, "missing assertion"
+    if ok:
+        log.info("access ok: %s %s %s", detail, request.method, request.url.path)
+    else:
+        log.warning("access denied: %s (%s %s)", detail, request.method, request.url.path)
+    return ok
+
+
+def _denied() -> Response:
+    if ACCESS_MODE:
+        # No WWW-Authenticate: Access owns the challenge at the edge.
+        return JSONResponse({"error": "forbidden"}, status_code=403)
+    return _unauthorized()
+
+
 def _sse(payload: Any) -> str:
     """Encode a JSON-RPC message as a single Server-Sent Event."""
     return f"event: message\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
@@ -414,8 +618,8 @@ def _sse(payload: Any) -> str:
 
 @app.post("/mcp")
 async def mcp_endpoint(request: Request) -> Response:
-    if not _valid_bearer(request):
-        return _unauthorized()
+    if not await _authorized(request):
+        return _denied()
     try:
         body = await request.json()
     except Exception:  # noqa: BLE001
@@ -461,8 +665,8 @@ async def mcp_endpoint(request: Request) -> Response:
 # We don't push server-initiated messages, so reply 405 (allowed by spec).
 @app.get("/mcp")
 async def mcp_get(request: Request) -> Response:
-    if not _valid_bearer(request):
-        return _unauthorized()
+    if not await _authorized(request):
+        return _denied()
     return Response(status_code=405, headers={"Allow": "POST"})
 
 
