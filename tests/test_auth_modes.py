@@ -81,6 +81,7 @@ class FakeNet:
         self.jwks_block: threading.Event | None = None
         self.qdrant_delay = 0.0
         self.qdrant_error: Exception | None = None
+        self.qdrant_status = 200
         self.calls: list[tuple[str, object]] = []
 
     def open(self, director, fullurl, data=None, timeout=None):
@@ -96,7 +97,7 @@ class FakeNet:
             time.sleep(self.qdrant_delay)
             if self.qdrant_error is not None:
                 raise self.qdrant_error
-            return FakeResponse(b"healthz check passed")
+            return FakeResponse(b"healthz check passed", self.qdrant_status)
         raise AssertionError(f"unexpected fetch: {url}")
 
     def jwks_fetches(self) -> list:
@@ -267,6 +268,12 @@ class AccessModeTest(ServerTestCase):
     def test_missing_exp(self):
         self.assertForbidden(mint(exp=None))
 
+    def test_missing_iss(self):
+        self.assertForbidden(mint(iss=None))
+
+    def test_missing_aud(self):
+        self.assertForbidden(mint(aud=None))
+
     def test_alg_none(self):
         self.assertForbidden(mint(key=None, alg="none"))
 
@@ -341,10 +348,13 @@ class AccessModeVariantsTest(ServerTestCase):
         ok = c.post("/mcp", json=RPC, headers={"Cf-Access-Jwt-Assertion": mint(email="Owner@example.com")})
         self.assertEqual(ok.status_code, 200, ok.text)
         for email in ("intruder@example.com", None):
-            r = c.post("/mcp", json=RPC, headers={"Cf-Access-Jwt-Assertion": mint(email=email)})
-            self.assertEqual(r.status_code, 403, email)
-            self.assertEqual(r.content, b'{"error":"forbidden"}')
-            self.assertNotIn("www-authenticate", r.headers)
+            for method in ("POST", "GET"):
+                r = c.request(method, "/mcp", json=RPC if method == "POST" else None,
+                              headers={"Cf-Access-Jwt-Assertion": mint(email=email)})
+                self.assertEqual(r.status_code, 403, f"{method} {email}")
+                self.assertEqual(r.content, b'{"error":"forbidden"}')
+                self.assertNotIn("www-authenticate", r.headers)
+        self.assertEqual(self.palace.requests, [RPC], "a denied request reached the palace")
 
     def test_no_allowlist_accepts_any_email(self):
         mod = self.load(**ACCESS_ENV, CF_ACCESS_ALLOWED_EMAILS="")
@@ -357,6 +367,39 @@ class AccessModeVariantsTest(ServerTestCase):
         mod = self.load(**ACCESS_ENV, MEMPALACE_QDRANT_URL="http://qdrant.test:6333")
         r = self.client(mod).get("/healthz")
         self.assertEqual((r.status_code, r.text), (503, "backend unavailable\n"))
+
+    def test_healthz_backend_unhealthy_is_503(self):
+        self.net.qdrant_status = 503
+        mod = self.load(**ACCESS_ENV, MEMPALACE_QDRANT_URL="http://qdrant.test:6333")
+        r = self.client(mod).get("/healthz")
+        self.assertEqual((r.status_code, r.text), (503, "backend unhealthy\n"))
+
+    def test_slow_jwks_refetch_does_not_block_other_requests(self):
+        # A new kid makes PyJWT refetch the JWKS; that blocking work must run
+        # off the event loop, or every other request waits for it.
+        mod = self.load(**ACCESS_ENV)
+        mod._jwks.cooldown_duration = 0
+        release = threading.Event()
+        self.addCleanup(release.set)
+        self.net.jwks_block = release
+        token = mint(kid="kid-rotated")
+
+        async def scenario():
+            transport = httpx.ASGITransport(app=mod.app)
+            async with httpx.AsyncClient(transport=transport, base_url="http://t") as c:
+                t0 = time.monotonic()
+                slow = asyncio.create_task(
+                    c.post("/mcp", json=RPC, headers={"Cf-Access-Jwt-Assertion": token}))
+                await asyncio.sleep(0.05)
+                fast = await c.get("/")
+                fast_after = time.monotonic() - t0
+                release.set()
+                denied = await slow
+                return fast.status_code, fast_after, denied.status_code
+
+        fast_status, fast_after, denied_status = asyncio.run(scenario())
+        self.assertEqual((fast_status, denied_status), (200, 403))
+        self.assertLess(fast_after, 0.75, "GET / waited for the JWKS refetch")
 
     def test_slow_healthz_does_not_block_other_requests(self):
         self.net.qdrant_delay = 1.5
@@ -495,6 +538,7 @@ class LauncherTest(unittest.TestCase):
 
     def run_sh(self, env_file_text: str) -> subprocess.CompletedProcess:
         tmp = Path(tempfile.mkdtemp(prefix="mp-remote-run-"))
+        self.addCleanup(shutil.rmtree, tmp, True)
         env_file = tmp / "env"
         env_file.write_text(env_file_text)
         stub = tmp / "python"
