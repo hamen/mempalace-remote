@@ -20,7 +20,7 @@
 <p align="center">
   <img alt="self-hosted" src="https://img.shields.io/badge/self--hosted-at%20home-2ea44f?style=flat-square">
   <img alt="no cloud storage" src="https://img.shields.io/badge/cloud%20storage-none-2ea44f?style=flat-square">
-  <img alt="data leaves home" src="https://img.shields.io/badge/data%20leaves%20home-never-8A2BE2?style=flat-square">
+  <img alt="palace data stays home" src="https://img.shields.io/badge/palace%20data-stays%20home-8A2BE2?style=flat-square">
 </p>
 
 <p align="center">

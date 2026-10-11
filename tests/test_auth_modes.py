@@ -47,12 +47,13 @@ OWNER = "owner@example.com"
 
 GOOD_KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
 OTHER_KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+ROTATED_KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
 
 
-def _jwks() -> dict:
-    jwk = json.loads(jwt.algorithms.RSAAlgorithm.to_jwk(GOOD_KEY.public_key()))
-    jwk.update({"kid": KID, "alg": "RS256", "use": "sig"})
-    return {"keys": [jwk]}
+def _jwk(key, kid: str) -> dict:
+    jwk = json.loads(jwt.algorithms.RSAAlgorithm.to_jwk(key.public_key()))
+    jwk.update({"kid": kid, "alg": "RS256", "use": "sig"})
+    return jwk
 
 
 def mint(key=GOOD_KEY, alg="RS256", kid=KID, **claims) -> str:
@@ -79,6 +80,7 @@ class FakeNet:
     def __init__(self):
         self.jwks_error: Exception | None = None
         self.jwks_block: threading.Event | None = None
+        self.jwks_extra: list[dict] = []
         self.qdrant_delay = 0.0
         self.qdrant_error: Exception | None = None
         self.qdrant_status = 200
@@ -92,7 +94,8 @@ class FakeNet:
                 self.jwks_block.wait(5)
             if self.jwks_error is not None:
                 raise self.jwks_error
-            return FakeResponse(json.dumps(_jwks()).encode())
+            keys = [_jwk(GOOD_KEY, KID)] + self.jwks_extra
+            return FakeResponse(json.dumps({"keys": keys}).encode())
         if url.startswith("http://qdrant.test"):
             time.sleep(self.qdrant_delay)
             if self.qdrant_error is not None:
@@ -249,6 +252,16 @@ class AccessModeTest(ServerTestCase):
         self.assertForbidden(mint(kid="kid-unknown"))
         self.assertGreater(len(self.net.jwks_fetches()), before, "no JWKS refetch")
 
+    def test_rotated_key_is_accepted_after_refetch(self):
+        # Cloudflare rotates its signing key: a token with the new kid makes
+        # the server refetch the JWKS, find the key and serve the request.
+        self.mod._jwks.cooldown_duration = 0
+        self.net.jwks_extra.append(_jwk(ROTATED_KEY, "kid-2"))
+        r = self.post(mint(key=ROTATED_KEY, kid="kid-2"))
+        self.assertEqual(r.status_code, 200, r.text)
+        self.assertEqual(len(self.net.jwks_fetches()), 2, "no JWKS refetch")
+        self.assertEqual(self.palace.requests, [RPC])
+
     def test_jwks_refetch_network_error(self):
         self.mod._jwks.cooldown_duration = 0
         self.net.jwks_error = urllib.error.URLError("connection refused")
@@ -368,7 +381,17 @@ class AccessModeVariantsTest(ServerTestCase):
         r = self.client(mod).get("/healthz")
         self.assertEqual((r.status_code, r.text), (503, "backend unavailable\n"))
 
+    def test_healthz_backend_http_error_is_503(self):
+        # What urllib really does with a non-2xx answer from Qdrant: it raises.
+        self.net.qdrant_error = urllib.error.HTTPError(
+            "http://qdrant.test:6333/healthz", 503, "Service Unavailable", {}, None)
+        mod = self.load(**ACCESS_ENV, MEMPALACE_QDRANT_URL="http://qdrant.test:6333")
+        r = self.client(mod).get("/healthz")
+        self.assertEqual((r.status_code, r.text), (503, "backend unavailable\n"))
+
     def test_healthz_backend_unhealthy_is_503(self):
+        # Fallback branch: only a response that comes back non-2xx WITHOUT an
+        # exception lands here (urllib raises today). It must still be a 503.
         self.net.qdrant_status = 503
         mod = self.load(**ACCESS_ENV, MEMPALACE_QDRANT_URL="http://qdrant.test:6333")
         r = self.client(mod).get("/healthz")
