@@ -16,7 +16,13 @@ fi
 # Interpreter from the uv tool venv that ships mempalace.
 PY="${MEMPALACE_PYTHON:-$HOME/.local/share/uv/tools/mempalace/bin/python}"
 
-: "${MEMPALACE_REMOTE_PASSPHRASE:?set MEMPALACE_REMOTE_PASSPHRASE in $ENV_FILE}"
+# The passphrase is the login only in passphrase mode (the default). In
+# cloudflare-access mode, server.py validates its own settings at start.
+case "${AUTH_MODE:-}" in
+  ""|passphrase)
+    : "${MEMPALACE_REMOTE_PASSPHRASE:?set MEMPALACE_REMOTE_PASSPHRASE in $ENV_FILE}"
+    ;;
+esac
 
 cd "$(dirname "$0")"
 exec "$PY" server.py
