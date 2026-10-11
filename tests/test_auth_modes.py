@@ -106,6 +106,9 @@ class FakeNet:
     def jwks_fetches(self) -> list:
         return [c for c in self.calls if c[0].endswith("/cdn-cgi/access/certs")]
 
+    def qdrant_probes(self) -> list:
+        return [c for c in self.calls if c[0].startswith("http://qdrant.test")]
+
 
 class StubPalace:
     """mempalace + mempalace.mcp_server, recording what the server does."""
@@ -396,6 +399,42 @@ class AccessModeVariantsTest(ServerTestCase):
         mod = self.load(**ACCESS_ENV, MEMPALACE_QDRANT_URL="http://qdrant.test:6333")
         r = self.client(mod).get("/healthz")
         self.assertEqual((r.status_code, r.text), (503, "backend unhealthy\n"))
+
+    def test_healthz_flood_shares_one_probe(self):
+        # /healthz is public: a flood while Qdrant is slow must not queue one
+        # probe per request. Concurrent requests share the probe in flight.
+        self.net.qdrant_delay = 0.3
+        mod = self.load(**ACCESS_ENV, MEMPALACE_QDRANT_URL="http://qdrant.test:6333")
+
+        async def scenario():
+            transport = httpx.ASGITransport(app=mod.app)
+            async with httpx.AsyncClient(transport=transport, base_url="http://t") as c:
+                t0 = time.monotonic()
+                rs = await asyncio.gather(*(c.get("/healthz") for _ in range(20)))
+                return [r.status_code for r in rs], time.monotonic() - t0
+
+        statuses, elapsed = asyncio.run(scenario())
+        self.assertEqual(statuses, [200] * 20)
+        self.assertEqual(len(self.net.qdrant_probes()), 1, "one probe per request")
+        self.assertLess(elapsed, 1.5)
+
+    def test_healthz_hang_up_does_not_cancel_the_shared_probe(self):
+        self.net.qdrant_delay = 0.3
+        mod = self.load(**ACCESS_ENV, MEMPALACE_QDRANT_URL="http://qdrant.test:6333")
+
+        async def scenario():
+            transport = httpx.ASGITransport(app=mod.app)
+            async with httpx.AsyncClient(transport=transport, base_url="http://t") as c:
+                first = asyncio.create_task(c.get("/healthz"))
+                await asyncio.sleep(0.05)
+                second = asyncio.create_task(c.get("/healthz"))
+                await asyncio.sleep(0.05)
+                first.cancel()  # the first client hangs up
+                r = await second
+                return r.status_code, r.text
+
+        self.assertEqual(asyncio.run(scenario()), (200, "ok\n"))
+        self.assertEqual(len(self.net.qdrant_probes()), 1)
 
     def test_slow_jwks_refetch_does_not_block_other_requests(self):
         # A new kid makes PyJWT refetch the JWKS; that blocking work must run

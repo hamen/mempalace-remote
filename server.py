@@ -253,32 +253,40 @@ async def root() -> PlainTextResponse:
 
 
 # The backend probe blocks for up to 4 s, so it runs off the event loop, in its
-# own small pool: /healthz is public (an Access bypass), and a flood of it must
-# stall neither /mcp nor the palace calls in the default executor.
-_health_pool = ThreadPoolExecutor(max_workers=2, thread_name_prefix="healthz")
+# own thread: /healthz is public (an Access bypass), and a flood of it must
+# stall neither /mcp nor the palace calls in the default executor. Concurrent
+# requests share the probe in flight, so a flood while Qdrant is slow queues
+# no work: every waiter gets that one probe's answer when it ends.
+_health_pool = ThreadPoolExecutor(max_workers=1, thread_name_prefix="healthz")
+_probe_in_flight: Optional[asyncio.Future] = None
 
 
-def _probe_backend(qurl: str) -> Response:
+def _probe_backend(qurl: str) -> tuple[int, str]:
     import urllib.request
     try:
         with urllib.request.urlopen(qurl.rstrip("/") + "/healthz", timeout=4) as r:
             if 200 <= r.status < 300:
-                return PlainTextResponse("ok\n")
+                return 200, "ok\n"
     except Exception:  # noqa: BLE001
-        return PlainTextResponse("backend unavailable\n", status_code=503)
-    return PlainTextResponse("backend unhealthy\n", status_code=503)
+        return 503, "backend unavailable\n"
+    return 503, "backend unhealthy\n"
 
 
 @app.get("/healthz")
 async def healthz() -> Response:
+    global _probe_in_flight
     # Deep check: when a remote vector backend is configured, the wrapper is
     # only healthy if that backend answers. Otherwise /healthz would lie
     # (process up, brain unreachable) and the watchdog/sentinel would miss a
     # dead backend.
     qurl = os.environ.get("MEMPALACE_QDRANT_URL")
     if qurl:
-        loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(_health_pool, _probe_backend, qurl)
+        if _probe_in_flight is None or _probe_in_flight.done():
+            loop = asyncio.get_running_loop()
+            _probe_in_flight = loop.run_in_executor(_health_pool, _probe_backend, qurl)
+        # shield: a client that hangs up must not cancel the probe others wait on.
+        status, text = await asyncio.shield(_probe_in_flight)
+        return PlainTextResponse(text, status_code=status)
     return PlainTextResponse("ok\n")
 
 
