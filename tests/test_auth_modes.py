@@ -418,6 +418,17 @@ class AccessModeVariantsTest(ServerTestCase):
         self.assertEqual(len(self.net.qdrant_probes()), 1, "one probe per request")
         self.assertLess(elapsed, 1.5)
 
+    def test_healthz_does_not_reuse_a_finished_probe(self):
+        # Sharing is only for the probe in flight: the next request after it
+        # ends must probe again, or the watchdog would keep a stale answer.
+        mod = self.load(**ACCESS_ENV, MEMPALACE_QDRANT_URL="http://qdrant.test:6333")
+        c = self.client(mod)
+        self.assertEqual(c.get("/healthz").status_code, 200)
+        self.net.qdrant_error = urllib.error.URLError("refused")
+        r = c.get("/healthz")
+        self.assertEqual((r.status_code, r.text), (503, "backend unavailable\n"))
+        self.assertEqual(len(self.net.qdrant_probes()), 2)
+
     def test_healthz_hang_up_does_not_cancel_the_shared_probe(self):
         self.net.qdrant_delay = 0.3
         mod = self.load(**ACCESS_ENV, MEMPALACE_QDRANT_URL="http://qdrant.test:6333")

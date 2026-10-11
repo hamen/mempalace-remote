@@ -35,7 +35,7 @@ Public **remote MCP** front-end for [**MemPalace**](https://github.com/MemPalace
 the Claude app (phone), Codex, Cursor, and the rest — can reach your local palace
 as a custom connector. It's plain HTTP MCP + OAuth 2.1, so there's
 nothing Claude-specific about it: point any conforming client at the URL. Runs
-**entirely on the desktop** — the palace data is stored nowhere else. A Cloudflare
+**entirely on the desktop** — the live palace stays there (only backups go off-site). A Cloudflare
 Tunnel (with Cloudflare Access in front) or Tailscale Funnel publishes it; no router
 ports, no Hetzner. Just a little server in your house. 🏠
 
