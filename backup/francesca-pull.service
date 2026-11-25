@@ -1,6 +1,6 @@
 # Pull Francesca's MemPalace backups from the Mac mini (one-shot, run by the .timer).
 # Host goes in ~/.config/mempalace-remote/francesca-pull.env (MAC_HOST=user@host),
-# kept out of this public repo.
+# kept out of this public repo. This is a systemd --user unit.
 [Unit]
 Description=Pull Francesca's MemPalace backups from the Mac mini
 After=network-online.target
@@ -8,4 +8,6 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-ExecStart=/home/ivan/code/mempalace-remote/backup/francesca-pull.sh
+ExecStart=%h/code/mempalace-remote/backup/francesca-pull.sh
+# A hung run must not hold the lock forever (it would also hide the stale alert).
+TimeoutStartSec=30min
