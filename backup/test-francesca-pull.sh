@@ -56,7 +56,7 @@ setup; make_kg; make_snap new 0; run
 check "happy: exit 0" test "$rc" -eq 0
 check "happy: snapshot pulled" test -f "$T/dest/snapshots/mempalace-backup-new.tar.gz"
 check "happy: KG copy has data" test "$(sqlite3 "$T"/dest/kg/*.sqlite3 'select count(*) from triples')" = 1
-check "happy: no temp file left on the Mac" test -z "$(ls -A "$MAC" | grep francesca-kg-pull)"
+check "happy: no temp file left on the Mac" test -z "$(find "$MAC" -maxdepth 1 -name '.francesca-kg-pull.*')"
 rm -rf "$T"
 
 # 2) missing KG on the Mac: alert, no empty copy, no empty db created there
