@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# Pre-push gate: tests, linters and the format check must pass before anything
+# reaches GitHub. Enable once per clone: git config core.hooksPath .githooks
+set -euo pipefail
+cd "$(git rev-parse --show-toplevel)"
+
+step() { printf '\n== %s\n' "$1"; }
+
+step "shellcheck"
+git ls-files -z '*.sh' .githooks/pre-push | xargs -0 shellcheck -S warning
+
+step "ruff check"
+uvx ruff check .
+
+step "ruff format --check"
+uvx ruff format --check .
+
+step "python tests"
+uv run -q --isolated --no-project --with fastapi --with httpx \
+  --with python-multipart --with 'pyjwt[crypto]' \
+  python -m unittest discover -s tests
+
+step "shell tests"
+shopt -s nullglob
+for t in backup/test-*.sh monitor/test-*.sh; do
+  echo "-- $t"
+  bash "$t"
+done
+
+printf '\npre-push: all checks passed\n'

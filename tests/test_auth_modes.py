@@ -60,8 +60,14 @@ def mint(key=GOOD_KEY, alg="RS256", kid=KID, **claims) -> str:
     """A Cloudflare-shaped assertion; a claim passed as None is left out."""
     now = int(time.time())
     payload = {
-        "aud": [AUD], "iss": TEAM, "exp": now + 300, "iat": now, "nbf": now,
-        "email": OWNER, "sub": "user-1", "type": "app",
+        "aud": [AUD],
+        "iss": TEAM,
+        "exp": now + 300,
+        "iat": now,
+        "nbf": now,
+        "email": OWNER,
+        "sub": "user-1",
+        "type": "app",
     }
     payload.update(claims)
     payload = {k: v for k, v in payload.items() if v is not None}
@@ -87,7 +93,9 @@ class FakeNet:
         self.calls: list[tuple[str, object]] = []
 
     def open(self, director, fullurl, data=None, timeout=None):
-        url = fullurl.full_url if isinstance(fullurl, urllib.request.Request) else fullurl
+        url = (
+            fullurl.full_url if isinstance(fullurl, urllib.request.Request) else fullurl
+        )
         self.calls.append((url, timeout))
         if url.endswith("/cdn-cgi/access/certs"):
             if self.jwks_block is not None:
@@ -162,8 +170,11 @@ class ServerTestCase(unittest.TestCase):
     def load(self, **env):
         """Fresh import of server.py with exactly this environment."""
         clean = {
-            k: v for k, v in os.environ.items()
-            if not k.startswith(("AUTH_MODE", "CF_ACCESS_", "MEMPALACE_", "PUBLIC_BASE_URL"))
+            k: v
+            for k, v in os.environ.items()
+            if not k.startswith(
+                ("AUTH_MODE", "CF_ACCESS_", "MEMPALACE_", "PUBLIC_BASE_URL")
+            )
         }
         clean["MEMPALACE_REMOTE_STATE"] = str(self.state)
         clean.update(env)
@@ -181,6 +192,7 @@ class ServerTestCase(unittest.TestCase):
                     sys.modules.pop(k, None)
                 else:
                     sys.modules[k] = v
+
         self.addCleanup(restore)
 
         ServerTestCase._n += 1
@@ -191,7 +203,9 @@ class ServerTestCase(unittest.TestCase):
         self.addCleanup(sys.modules.pop, name, None)
         with warnings.catch_warnings():
             # server.py's @app.on_event predates this change; keep the output readable.
-            warnings.filterwarnings("ignore", r"\s*on_event is deprecated", DeprecationWarning)
+            warnings.filterwarnings(
+                "ignore", r"\s*on_event is deprecated", DeprecationWarning
+            )
             spec.loader.exec_module(mod)
         return mod
 
@@ -218,11 +232,15 @@ class AccessModeTest(ServerTestCase):
             h = dict(headers)
             if token is not None:
                 h["Cf-Access-Jwt-Assertion"] = token
-            r = self.c.request(method, "/mcp", json=RPC if method == "POST" else None, headers=h)
+            r = self.c.request(
+                method, "/mcp", json=RPC if method == "POST" else None, headers=h
+            )
             self.assertEqual(r.status_code, 403, f"{method} {r.text}")
             self.assertEqual(r.content, b'{"error":"forbidden"}')
             self.assertNotIn("www-authenticate", r.headers)
-        self.assertEqual(self.palace.requests, [], "a denied request reached the palace")
+        self.assertEqual(
+            self.palace.requests, [], "a denied request reached the palace"
+        )
 
     def test_startup_fetched_jwks_with_timeout(self):
         fetches = self.net.jwks_fetches()
@@ -301,14 +319,23 @@ class AccessModeTest(ServerTestCase):
 
     def test_passphrase_bearer_alone_is_ignored(self):
         # Even a token the passphrase mode would accept opens nothing here.
-        self.mod._store["tokens"]["tok"] = {"client_id": "c", "expires": time.time() + 999}
-        self.assertTrue(self.mod._valid_bearer(
-            types.SimpleNamespace(headers={"authorization": "Bearer tok"})))
+        self.mod._store["tokens"]["tok"] = {
+            "client_id": "c",
+            "expires": time.time() + 999,
+        }
+        self.assertTrue(
+            self.mod._valid_bearer(
+                types.SimpleNamespace(headers={"authorization": "Bearer tok"})
+            )
+        )
         self.assertForbidden(Authorization="Bearer tok")
 
     def test_oauth_endpoints_are_gone(self):
         for method, path in [
-            ("GET", "/authorize?response_type=code&client_id=x&redirect_uri=x&code_challenge=x"),
+            (
+                "GET",
+                "/authorize?response_type=code&client_id=x&redirect_uri=x&code_challenge=x",
+            ),
             ("POST", "/authorize"),
             ("POST", "/register"),
             ("POST", "/token"),
@@ -352,30 +379,52 @@ class AccessModeVariantsTest(ServerTestCase):
         self.assertFalse((self.state / "oauth_state.json").exists())
 
     def test_team_domain_without_scheme_and_with_slash(self):
-        mod = self.load(**{**ACCESS_ENV, "CF_ACCESS_TEAM_DOMAIN": "example-team.cloudflareaccess.com/"})
+        mod = self.load(
+            **{
+                **ACCESS_ENV,
+                "CF_ACCESS_TEAM_DOMAIN": "example-team.cloudflareaccess.com/",
+            }
+        )
         self.assertEqual(mod.CF_ACCESS_TEAM, TEAM)
         self.assertEqual(self.net.jwks_fetches()[0][0], CERTS_URL)
-        r = self.client(mod).post("/mcp", json=RPC, headers={"Cf-Access-Jwt-Assertion": mint()})
+        r = self.client(mod).post(
+            "/mcp", json=RPC, headers={"Cf-Access-Jwt-Assertion": mint()}
+        )
         self.assertEqual(r.status_code, 200, r.text)
 
     def test_allowlist_case_and_spaces(self):
-        mod = self.load(**ACCESS_ENV, CF_ACCESS_ALLOWED_EMAILS=" Someone@else.org , OWNER@Example.COM ")
+        mod = self.load(
+            **ACCESS_ENV,
+            CF_ACCESS_ALLOWED_EMAILS=" Someone@else.org , OWNER@Example.COM ",
+        )
         c = self.client(mod)
-        ok = c.post("/mcp", json=RPC, headers={"Cf-Access-Jwt-Assertion": mint(email="Owner@example.com")})
+        ok = c.post(
+            "/mcp",
+            json=RPC,
+            headers={"Cf-Access-Jwt-Assertion": mint(email="Owner@example.com")},
+        )
         self.assertEqual(ok.status_code, 200, ok.text)
         for email in ("intruder@example.com", None):
             for method in ("POST", "GET"):
-                r = c.request(method, "/mcp", json=RPC if method == "POST" else None,
-                              headers={"Cf-Access-Jwt-Assertion": mint(email=email)})
+                r = c.request(
+                    method,
+                    "/mcp",
+                    json=RPC if method == "POST" else None,
+                    headers={"Cf-Access-Jwt-Assertion": mint(email=email)},
+                )
                 self.assertEqual(r.status_code, 403, f"{method} {email}")
                 self.assertEqual(r.content, b'{"error":"forbidden"}')
                 self.assertNotIn("www-authenticate", r.headers)
-        self.assertEqual(self.palace.requests, [RPC], "a denied request reached the palace")
+        self.assertEqual(
+            self.palace.requests, [RPC], "a denied request reached the palace"
+        )
 
     def test_no_allowlist_accepts_any_email(self):
         mod = self.load(**ACCESS_ENV, CF_ACCESS_ALLOWED_EMAILS="")
         c = self.client(mod)
-        r = c.post("/mcp", json=RPC, headers={"Cf-Access-Jwt-Assertion": mint(email="x@y.z")})
+        r = c.post(
+            "/mcp", json=RPC, headers={"Cf-Access-Jwt-Assertion": mint(email="x@y.z")}
+        )
         self.assertEqual(r.status_code, 200, r.text)
 
     def test_healthz_backend_down_is_503(self):
@@ -387,7 +436,8 @@ class AccessModeVariantsTest(ServerTestCase):
     def test_healthz_backend_http_error_is_503(self):
         # What urllib really does with a non-2xx answer from Qdrant: it raises.
         self.net.qdrant_error = urllib.error.HTTPError(
-            "http://qdrant.test:6333/healthz", 503, "Service Unavailable", {}, None)
+            "http://qdrant.test:6333/healthz", 503, "Service Unavailable", {}, None
+        )
         mod = self.load(**ACCESS_ENV, MEMPALACE_QDRANT_URL="http://qdrant.test:6333")
         r = self.client(mod).get("/healthz")
         self.assertEqual((r.status_code, r.text), (503, "backend unavailable\n"))
@@ -462,7 +512,8 @@ class AccessModeVariantsTest(ServerTestCase):
             async with httpx.AsyncClient(transport=transport, base_url="http://t") as c:
                 t0 = time.monotonic()
                 slow = asyncio.create_task(
-                    c.post("/mcp", json=RPC, headers={"Cf-Access-Jwt-Assertion": token}))
+                    c.post("/mcp", json=RPC, headers={"Cf-Access-Jwt-Assertion": token})
+                )
                 await asyncio.sleep(0.05)
                 fast = await c.get("/")
                 fast_after = time.monotonic() - t0
@@ -505,7 +556,9 @@ class ImportRefusalTest(ServerTestCase):
         self.assertIn("AUTH_MODE", self.assertRefuses(AUTH_MODE="cloudflare"))
 
     def test_missing_aud(self):
-        self.assertIn("CF_ACCESS_AUD", self.assertRefuses(**{**ACCESS_ENV, "CF_ACCESS_AUD": ""}))
+        self.assertIn(
+            "CF_ACCESS_AUD", self.assertRefuses(**{**ACCESS_ENV, "CF_ACCESS_AUD": ""})
+        )
 
     def test_missing_team(self):
         env = dict(ACCESS_ENV)
@@ -513,7 +566,9 @@ class ImportRefusalTest(ServerTestCase):
         self.assertIn("CF_ACCESS_TEAM_DOMAIN", self.assertRefuses(**env))
 
     def test_plain_http_team(self):
-        msg = self.assertRefuses(**{**ACCESS_ENV, "CF_ACCESS_TEAM_DOMAIN": "http://x.cloudflareaccess.com"})
+        msg = self.assertRefuses(
+            **{**ACCESS_ENV, "CF_ACCESS_TEAM_DOMAIN": "http://x.cloudflareaccess.com"}
+        )
         self.assertIn("CF_ACCESS_TEAM_DOMAIN", msg)
 
     def test_allowlist_empty_after_parsing(self):
@@ -554,7 +609,9 @@ class ImportRefusalTest(ServerTestCase):
 class PassphraseModeTest(ServerTestCase):
     def setUp(self):
         super().setUp()
-        self.mod = self.load(MEMPALACE_REMOTE_PASSPHRASE="pw", PUBLIC_BASE_URL="https://mp.test")
+        self.mod = self.load(
+            MEMPALACE_REMOTE_PASSPHRASE="pw", PUBLIC_BASE_URL="https://mp.test"
+        )
         self.c = self.client(self.mod)
 
     def test_default_mode_needs_no_pyjwt(self):
@@ -567,11 +624,17 @@ class PassphraseModeTest(ServerTestCase):
         self.assertEqual(mod.AUTH_MODE, "passphrase")
 
     def test_register(self):
-        r = self.c.post("/register", json={"redirect_uris": ["https://claude.ai/api/mcp/auth_callback"]})
+        r = self.c.post(
+            "/register",
+            json={"redirect_uris": ["https://claude.ai/api/mcp/auth_callback"]},
+        )
         self.assertEqual(r.status_code, 201)
 
     def test_valid_bearer_reaches_the_palace(self):
-        self.mod._store["tokens"]["tok"] = {"client_id": "c", "expires": time.time() + 999}
+        self.mod._store["tokens"]["tok"] = {
+            "client_id": "c",
+            "expires": time.time() + 999,
+        }
         h = {"Authorization": "Bearer tok"}
         r = self.c.post("/mcp", json=RPC, headers=h)
         self.assertEqual(r.status_code, 200, r.text)
@@ -623,7 +686,9 @@ class LauncherTest(unittest.TestCase):
             "MEMPALACE_REMOTE_ENV": str(env_file),
             "MEMPALACE_PYTHON": str(stub),
         }
-        return subprocess.run(["bash", str(RUN_SH)], env=env, capture_output=True, text=True, timeout=20)
+        return subprocess.run(
+            ["bash", str(RUN_SH)], env=env, capture_output=True, text=True, timeout=20
+        )
 
     def assertExecs(self, p):
         self.assertEqual(p.returncode, 0, p.stderr)

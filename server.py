@@ -41,7 +41,9 @@ from urllib.parse import urlsplit
 # file, so the exit reaches systemd as a failed start.
 AUTH_MODE = os.environ.get("AUTH_MODE", "").strip() or "passphrase"
 if AUTH_MODE not in ("passphrase", "cloudflare-access"):
-    raise SystemExit(f"AUTH_MODE={AUTH_MODE!r}: expected 'passphrase' or 'cloudflare-access'")
+    raise SystemExit(
+        f"AUTH_MODE={AUTH_MODE!r}: expected 'passphrase' or 'cloudflare-access'"
+    )
 ACCESS_MODE = AUTH_MODE == "cloudflare-access"
 
 JWKS_TIMEOUT = 10  # seconds, for the startup fetch and every later refetch
@@ -51,11 +53,19 @@ def _team_domain(raw: str) -> str:
     """https://<team>.cloudflareaccess.com — the `iss` of every assertion."""
     team = raw.strip().rstrip("/")
     if not team:
-        raise SystemExit("CF_ACCESS_TEAM_DOMAIN is required when AUTH_MODE=cloudflare-access")
+        raise SystemExit(
+            "CF_ACCESS_TEAM_DOMAIN is required when AUTH_MODE=cloudflare-access"
+        )
     if "://" not in team:
         team = "https://" + team
     parts = urlsplit(team)
-    if parts.scheme != "https" or not parts.netloc or parts.path or parts.query or parts.fragment:
+    if (
+        parts.scheme != "https"
+        or not parts.netloc
+        or parts.path
+        or parts.query
+        or parts.fragment
+    ):
         raise SystemExit(
             f"CF_ACCESS_TEAM_DOMAIN={raw!r}: expected https://<team>.cloudflareaccess.com"
         )
@@ -69,7 +79,9 @@ def _allowed_emails(raw: Optional[str]) -> Optional[frozenset[str]]:
         return None
     emails = frozenset(e.strip().lower() for e in raw.split(",") if e.strip())
     if not emails:
-        raise SystemExit(f"CF_ACCESS_ALLOWED_EMAILS={raw!r} lists no email; unset it or name one")
+        raise SystemExit(
+            f"CF_ACCESS_ALLOWED_EMAILS={raw!r} lists no email; unset it or name one"
+        )
     return emails
 
 
@@ -105,7 +117,9 @@ if ACCESS_MODE:
     CF_ACCESS_AUD = os.environ.get("CF_ACCESS_AUD", "").strip()
     if not CF_ACCESS_AUD:
         raise SystemExit("CF_ACCESS_AUD is required when AUTH_MODE=cloudflare-access")
-    CF_ACCESS_ALLOWED_EMAILS = _allowed_emails(os.environ.get("CF_ACCESS_ALLOWED_EMAILS"))
+    CF_ACCESS_ALLOWED_EMAILS = _allowed_emails(
+        os.environ.get("CF_ACCESS_ALLOWED_EMAILS")
+    )
     # Imported only in this mode: passphrase installs need nothing new.
     try:
         import jwt
@@ -117,13 +131,17 @@ if ACCESS_MODE:
         ) from None
     if not has_crypto:
         raise SystemExit("AUTH_MODE=cloudflare-access needs pyjwt[crypto] (RS256)")
-    _jwks = jwt.PyJWKClient(f"{CF_ACCESS_TEAM}/cdn-cgi/access/certs", timeout=JWKS_TIMEOUT)
+    _jwks = jwt.PyJWKClient(
+        f"{CF_ACCESS_TEAM}/cdn-cgi/access/certs", timeout=JWKS_TIMEOUT
+    )
     # Fetch once now: a wrong team domain or a hung fetch fails the start
     # loudly instead of turning every request into a quiet 403.
     try:
         _within(JWKS_TIMEOUT, _jwks.get_signing_keys)
     except Exception as exc:  # noqa: BLE001
-        raise SystemExit(f"cannot load the Access signing keys from {_jwks.uri}: {exc}") from None
+        raise SystemExit(
+            f"cannot load the Access signing keys from {_jwks.uri}: {exc}"
+        ) from None
 
 # Importing mempalace.mcp_server runs its module-level "stdio protection" which
 # dup2(2,1)'s real stdout onto stderr (meant for the stdio transport). Undo it
@@ -145,9 +163,9 @@ STATE_DIR = Path(
 )
 STATE_FILE = STATE_DIR / "oauth_state.json"
 
-ACCESS_TTL = 30 * 24 * 3600      # 30 days
-REFRESH_TTL = 365 * 24 * 3600    # 1 year
-CODE_TTL = 600                    # 10 minutes
+ACCESS_TTL = 30 * 24 * 3600  # 30 days
+REFRESH_TTL = 365 * 24 * 3600  # 1 year
+CODE_TTL = 600  # 10 minutes
 
 ISSUER = PUBLIC_BASE_URL
 MCP_RESOURCE = f"{PUBLIC_BASE_URL}/mcp"
@@ -237,14 +255,23 @@ async def _startup() -> None:
         # No OAuth state in this mode: oauth_state.json is neither read nor written.
         log.info(
             "mempalace-remote up; auth=cloudflare-access team=%s aud=%s emails=%s",
-            CF_ACCESS_TEAM, CF_ACCESS_AUD,
-            ",".join(sorted(CF_ACCESS_ALLOWED_EMAILS)) if CF_ACCESS_ALLOWED_EMAILS else "any",
+            CF_ACCESS_TEAM,
+            CF_ACCESS_AUD,
+            ",".join(sorted(CF_ACCESS_ALLOWED_EMAILS))
+            if CF_ACCESS_ALLOWED_EMAILS
+            else "any",
         )
         return
     if not PASSPHRASE:
-        log.error("MEMPALACE_REMOTE_PASSPHRASE is empty — /authorize will reject all logins")
+        log.error(
+            "MEMPALACE_REMOTE_PASSPHRASE is empty — /authorize will reject all logins"
+        )
     _load_store()
-    log.info("mempalace-remote up; auth=passphrase issuer=%s resource=%s", ISSUER, MCP_RESOURCE)
+    log.info(
+        "mempalace-remote up; auth=passphrase issuer=%s resource=%s",
+        ISSUER,
+        MCP_RESOURCE,
+    )
 
 
 @app.get("/")
@@ -263,6 +290,7 @@ _probe_in_flight: Optional[asyncio.Future] = None
 
 def _probe_backend(qurl: str) -> tuple[int, str]:
     import urllib.request
+
     try:
         with urllib.request.urlopen(qurl.rstrip("/") + "/healthz", timeout=4) as r:
             if 200 <= r.status < 300:
@@ -337,7 +365,10 @@ async def register(request: Request) -> JSONResponse:
     redirect_uris = body.get("redirect_uris") or []
     if not isinstance(redirect_uris, list) or not redirect_uris:
         return JSONResponse(
-            {"error": "invalid_redirect_uri", "error_description": "redirect_uris required"},
+            {
+                "error": "invalid_redirect_uri",
+                "error_description": "redirect_uris required",
+            },
             status_code=400,
         )
     client_id = "mp-" + secrets.token_urlsafe(16)
@@ -437,8 +468,11 @@ async def authorize_post(
     if not PASSPHRASE or not secrets.compare_digest(passphrase, PASSPHRASE):
         html = _LOGIN_HTML.format(
             error='<div class="err">Passphrase errata.</div>',
-            client_id=client_id, redirect_uri=redirect_uri, state=state,
-            code_challenge=code_challenge, code_challenge_method=code_challenge_method,
+            client_id=client_id,
+            redirect_uri=redirect_uri,
+            state=state,
+            code_challenge=code_challenge,
+            code_challenge_method=code_challenge_method,
             scope=scope,
         )
         return HTMLResponse(html, status_code=401)
@@ -465,10 +499,14 @@ def _issue_tokens(client_id: str, scope: str) -> dict:
     access = _new_token()
     refresh = _new_token()
     _store["tokens"][access] = {
-        "client_id": client_id, "scope": scope, "expires": _now() + ACCESS_TTL,
+        "client_id": client_id,
+        "scope": scope,
+        "expires": _now() + ACCESS_TTL,
     }
     _store["refresh"][refresh] = {
-        "client_id": client_id, "scope": scope, "expires": _now() + REFRESH_TTL,
+        "client_id": client_id,
+        "scope": scope,
+        "expires": _now() + REFRESH_TTL,
     }
     return {
         "access_token": access,
@@ -496,7 +534,10 @@ async def token(request: Request) -> JSONResponse:
             if entry["client_id"] != client_id or entry["redirect_uri"] != redirect_uri:
                 return JSONResponse({"error": "invalid_grant"}, status_code=400)
             if not _verify_pkce(verifier, entry["code_challenge"]):
-                return JSONResponse({"error": "invalid_grant", "error_description": "PKCE"}, status_code=400)
+                return JSONResponse(
+                    {"error": "invalid_grant", "error_description": "PKCE"},
+                    status_code=400,
+                )
             out = _issue_tokens(client_id, entry.get("scope", "mcp"))
             _save_store()
             return JSONResponse(out)
@@ -514,16 +555,18 @@ async def token(request: Request) -> JSONResponse:
 # In cloudflare-access mode, Access is the authorization server (at the edge).
 # Drop every built-in OAuth route, so the passphrase login page cannot be
 # reached from any path, the tailnet included: these paths answer 404.
-_OAUTH_PATHS = frozenset({
-    "/.well-known/oauth-protected-resource",
-    "/.well-known/oauth-protected-resource/mcp",
-    "/.well-known/oauth-authorization-server",
-    "/.well-known/oauth-authorization-server/mcp",
-    "/.well-known/openid-configuration",
-    "/register",
-    "/authorize",
-    "/token",
-})
+_OAUTH_PATHS = frozenset(
+    {
+        "/.well-known/oauth-protected-resource",
+        "/.well-known/oauth-protected-resource/mcp",
+        "/.well-known/oauth-authorization-server",
+        "/.well-known/oauth-authorization-server/mcp",
+        "/.well-known/openid-configuration",
+        "/register",
+        "/authorize",
+        "/token",
+    }
+)
 if ACCESS_MODE:
     app.router.routes[:] = [
         r for r in app.router.routes if getattr(r, "path", None) not in _OAUTH_PATHS
@@ -600,7 +643,9 @@ async def _authorized(request: Request) -> bool:
     if ok:
         log.info("access ok: %s %s %s", detail, request.method, request.url.path)
     else:
-        log.warning("access denied: %s (%s %s)", detail, request.method, request.url.path)
+        log.warning(
+            "access denied: %s (%s %s)", detail, request.method, request.url.path
+        )
     return ok
 
 
@@ -624,7 +669,11 @@ async def mcp_endpoint(request: Request) -> Response:
         body = await request.json()
     except Exception:  # noqa: BLE001
         return JSONResponse(
-            {"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": "Parse error"}},
+            {
+                "jsonrpc": "2.0",
+                "id": None,
+                "error": {"code": -32700, "message": "Parse error"},
+            },
             status_code=400,
         )
 

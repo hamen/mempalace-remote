@@ -28,8 +28,10 @@ alert=""
 
 notify() {
   [[ -f "$TELEGRAM_CREDS" ]] || return 0
+  set -a
   # shellcheck disable=SC1090
-  set -a; source "$TELEGRAM_CREDS"; set +a
+  source "$TELEGRAM_CREDS"
+  set +a
   curl -s --max-time 15 "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
     --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" --data-urlencode "text=$1" >/dev/null
 }
