@@ -1,0 +1,11 @@
+# Pull Francesca's MemPalace backups from the Mac mini (one-shot, run by the .timer).
+# Host goes in ~/.config/mempalace-remote/francesca-pull.env (MAC_HOST=user@host),
+# kept out of this public repo.
+[Unit]
+Description=Pull Francesca's MemPalace backups from the Mac mini
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/home/ivan/code/mempalace-remote/backup/francesca-pull.sh

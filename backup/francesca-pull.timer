@@ -1,0 +1,12 @@
+# Hourly, 20 minutes after the Mac's own snapshot (it runs at about :25).
+[Unit]
+Description=Pull Francesca's MemPalace backups every hour
+
+[Timer]
+OnCalendar=*-*-* *:45:00
+OnBootSec=5min
+Persistent=true
+AccuracySec=1min
+
+[Install]
+WantedBy=timers.target
