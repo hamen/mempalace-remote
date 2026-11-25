@@ -25,5 +25,6 @@ echo "== install 1-minute cron (idempotent) =="
 ssh "$NUC" '( crontab -l 2>/dev/null | grep -v mempalace-sentinel ; echo "* * * * * \$HOME/.local/share/mempalace-sentinel/sentinel.sh >/dev/null 2>&1 # mempalace-sentinel" ) | crontab -'
 
 echo "== test alert from the NUC =="
+# shellcheck disable=SC2088  # the ~ must expand on the NUC, not here
 ssh "$NUC" "~/$DEST/notify.sh '👁️ Sentinella MemPalace installata sul NUC — controllo money-maker via Funnel ogni 60s.'"
 echo "DONE."

@@ -11,6 +11,7 @@ Usage:
   MEMPALACE_QDRANT_URL=http://127.0.0.1:6333 \
   python migrate_chroma_to_qdrant.py SRC_PALACE_PATH DEST_PALACE_PATH
 """
+
 import sys
 from mempalace.palace import get_collection
 
@@ -22,7 +23,9 @@ COLLECTIONS = [REQUIRED, "mempalace_closets"]
 def migrate_collection(src_path, dst_path, name):
     """Return (src_count, dst_count), or None if the source collection is absent."""
     try:
-        src = get_collection(src_path, collection_name=name, create=False, backend="chroma")
+        src = get_collection(
+            src_path, collection_name=name, create=False, backend="chroma"
+        )
         total = src.count()
     except Exception as exc:  # noqa: BLE001
         cls = type(exc).__name__
@@ -33,15 +36,20 @@ def migrate_collection(src_path, dst_path, name):
     moved = 0
     offset = 0
     while offset < total:
-        batch = src.get(limit=BATCH, offset=offset,
-                        include=["documents", "metadatas", "embeddings"])
+        batch = src.get(
+            limit=BATCH, offset=offset, include=["documents", "metadatas", "embeddings"]
+        )
         ids = batch["ids"]
         if not ids:
             break
         # upsert (not add): skips the duplicate-precheck that fails before the
         # qdrant collection is created, and is idempotent across re-runs.
-        dst.upsert(ids=ids, documents=batch.get("documents"),
-                   metadatas=batch.get("metadatas"), embeddings=batch.get("embeddings"))
+        dst.upsert(
+            ids=ids,
+            documents=batch.get("documents"),
+            metadatas=batch.get("metadatas"),
+            embeddings=batch.get("embeddings"),
+        )
         moved += len(ids)
         offset += len(ids)
         print(f"  [{name}] {moved}/{total}")
